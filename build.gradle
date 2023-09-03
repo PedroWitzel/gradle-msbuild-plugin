@@ -1,37 +1,45 @@
+import de.undercouch.gradle.tasks.download.Download
+
 plugins {
-    id 'com.gradle.plugin-publish' version '0.15.0'
-    id 'com.ullink.msbuild' version '3.14'
-    id 'com.ullink.nuget' version '2.23'
-    id 'com.ullink.nunit' version '2.4'
-    id 'net.researchgate.release' version '2.6.0'
-    id 'de.undercouch.download' version '4.1.2'
+    id 'com.gradle.plugin-publish' version '1.+'
+    id 'com.ullink.msbuild' version '3.+'
+    id 'com.ullink.nuget' version '2.+'
+    id 'com.ullink.nunit' version '2.+'
+    id 'de.undercouch.download' version '5.+'
 }
 
 group = 'com.ullink.gradle'
 
 apply plugin: 'java-gradle-plugin'
 apply plugin: 'groovy'
-apply plugin: 'com.gradle.plugin-publish'
 apply plugin: 'maven-publish'
 
 description 'Gradle plugin for MSBuild project build.'
 
 ext.dotnetPath = file('src/main/dotnet')
 
+repositories {
+    mavenCentral()
+}
+
 dependencies {
-    testImplementation 'org.spockframework:spock-core:2.0-groovy-2.5'
-    testImplementation 'junit:junit:4.12'
-    testRuntimeOnly "org.junit.vintage:junit-vintage-engine:5.2.0"
-    implementation 'net.java.dev.jna:jna:4.2.2'
-    implementation 'net.java.dev.jna:jna-platform:4.2.2'
-    implementation 'com.google.guava:guava:27.0.1-jre'
+    testImplementation 'org.codehaus.groovy:groovy:3.0.17'
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.10.0'
+    testCompileOnly 'junit:junit:4.13.2'
+    testRuntimeOnly 'org.junit.vintage:junit-vintage-engine:5.10.0'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher:1.10.0'
+
+    implementation 'net.java.dev.jna:jna-platform:5.13.0'
+    implementation 'com.google.guava:guava:32.1.2-jre'
 }
 
 nugetRestore {
     solutionFile = file('ProjectFileParser.sln')
 }
 
-msbuild.dependsOn nugetRestore
+tasks.named('msbuild').configure {
+    dependsOn nugetRestore
+}
 msbuild {
     solutionFile = file('ProjectFileParser.sln')
     configuration = 'Release'
@@ -39,11 +47,12 @@ msbuild {
 }
 
 nunit {
-    testAssemblies = [ msbuild.projects['ProjectFileParser_Tests'].properties.TargetPath ]
+    testAssemblies = [msbuild.projects['ProjectFileParser_Tests'].properties.TargetPath]
 }
 
-task generateZip(dependsOn: nunit, type: Zip) {
-    from (msbuild.mainProject.properties.TargetDir) {
+tasks.register('generateZip', Zip) {
+    dependsOn nunit
+    from(msbuild.mainProject.properties.TargetDir) {
         include '*.exe'
         include '**/*.dll'
         include '*.config'
@@ -52,49 +61,45 @@ task generateZip(dependsOn: nunit, type: Zip) {
     archiveFileName = 'ProjectFileParser.zip'
 }
 
-task downloadVsWhere(type: de.undercouch.gradle.tasks.download.Download) {
-    src 'https://github.com/Microsoft/vswhere/releases/download/2.8.4/vswhere.exe'
+tasks.register('downloadVsWhere', Download) {
+    src 'https://github.com/microsoft/vswhere/releases/download/3.1.7/vswhere.exe'
     dest "$temporaryDir/vswhere.exe"
 }
 
+
 jar {
     from(generateZip.outputs.files) {
-        into ('META-INF')
+        into('META-INF')
     }
 }
 
 sourceSets {
     main {
         resources {
-            srcDirs = [ downloadVsWhere.temporaryDir ]
+            srcDirs = [downloadVsWhere.temporaryDir]
         }
     }
 }
 
-test {
+tasks.named('test', Test) {
     useJUnitPlatform()
 }
 
-pluginBundle {
+gradlePlugin {
     website = 'https://github.com/Itiviti/gradle-msbuild-plugin'
     vcsUrl = 'https://github.com/Itiviti/gradle-msbuild-plugin'
-    tags = ['msbuild', 'c#', '.net']
-
-    mavenCoordinates {
-        groupId = 'com.ullink.gradle'
-    }
-}
-
-gradlePlugin {
     plugins {
         msbuildPlugin {
             id = 'com.ullink.msbuild'
             description = project.description
             displayName = 'Gradle MSBuild Plugin'
             implementationClass = 'com.ullink.MsbuildPlugin'
+            tags.set(['msbuild', 'c#', '.net'])
         }
     }
 }
 
-processResources.dependsOn downloadVsWhere
-afterReleaseBuild.dependsOn publishPlugins
+tasks.named('processResources').configure { dependsOn downloadVsWhere }
+
+// Need to declare this task in advance because it isn't on this project's configuration phase
+tasks.register('sourcesJar', Jar) { dependsOn downloadVsWhere }

@@ -11,7 +11,7 @@ Plugin applies the base plugin automatically, and hooks msbuild output folders i
 Below tasks are provided by the plugin:
 
 ## Prerequisites
-* .Net Framework 4.6
+* .Net Framework 4.8
 
 ## msbuild
 
@@ -66,7 +66,7 @@ msbuild {
   // MsBuild resolution
   // it support to search the msbuild tools from vswhere (by default it searches the latest)
   version = '15.0'
-  // or define the exact msbuild dir explicity
+  // or define the exact msbuild dir explicitly
   msbuildDir = 'C:\\Program Files (x86)\\Microsoft Visual Studio\\2017\\BuildTools\\MSBuild\\15.0\\bin'
 
 

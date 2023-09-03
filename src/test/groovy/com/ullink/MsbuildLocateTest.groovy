@@ -3,6 +3,7 @@ package com.ullink
 import org.gradle.api.Project
 import org.gradle.internal.os.OperatingSystem
 import org.gradle.testfixtures.ProjectBuilder
+import org.junit.Assume
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -16,7 +17,7 @@ class MsbuildLocateTest {
 
     @Before
     public void beforeMethod() {
-        org.junit.Assume.assumeTrue OperatingSystem.current().isWindows()
+        Assume.assumeTrue OperatingSystem.current().isWindows()
     }
 
     @Test

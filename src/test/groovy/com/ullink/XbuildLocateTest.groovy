@@ -5,15 +5,12 @@ import org.gradle.api.Project
 import org.gradle.internal.os.OperatingSystem
 import org.gradle.testfixtures.ProjectBuilder
 import org.junit.Before
-import org.junit.Rule
 import org.junit.Test
-import org.junit.rules.ExpectedException
 
 import static org.junit.Assert.assertNotNull
+import static org.junit.Assert.assertThrows
 
 class XbuildLocateTest {
-    @Rule
-    public ExpectedException expectedException = ExpectedException.none();
 
     @Before
     public void beforeMethod() {
@@ -51,9 +48,9 @@ class XbuildLocateTest {
             version = 999.3
         }
 
-        expectedException.expect(GradleException.class)
-        expectedException.expectMessage("Cannot find an xbuild binary")
-        resolver.getXBuildDir(p.tasks.msbuild)
+        assertThrows("Cannot find an xbuild binary", GradleException.class, {
+            resolver.getXBuildDir(p.tasks.msbuild)
+        })
 
     }
 }

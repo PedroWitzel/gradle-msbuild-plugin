@@ -12,27 +12,23 @@
 package com.ullink
 
 import org.gradle.testfixtures.ProjectBuilder
-import spock.lang.Specification
-import spock.lang.TempDir
+import org.junit.Test
 
-import java.nio.file.Path
+class AssemblyInfoVersionPatcherSpec {
 
-class AssemblyInfoVersionPatcherSpec extends Specification {
-    @TempDir
-    Path temporaryFolder
+    @Test
+    void AssemblyInfoCanBePatched() {
 
-    def 'AssemblyInfo.cs can be patched'() {
-        given:
-        def assemblyInfo = temporaryFolder.resolve('AssemblyInfo.cs')
+        def project = ProjectBuilder.builder().build()
+        def task = project.tasks.register('assemblyPatcher', AssemblyInfoVersionPatcher).get()
+
+        def assemblyInfo = new File(task.temporaryDir, 'AssemblyInfo.cs')
         assemblyInfo.newWriter().withWriter {
             it << this.getClass().getResource('AssemblyInfo.cs').text
         }
 
-        and:
-        def project = ProjectBuilder.builder().build()
-        def task = project.tasks.register('assemblyPatcher', AssemblyInfoVersionPatcher).get()
         task.with {
-            files.set([ project.file(assemblyInfo) ])
+            files.set([project.file(assemblyInfo)])
             fileVersion.set 'file version'
             version = 'version'
             assemblyDescription = 'description'
@@ -43,10 +39,9 @@ class AssemblyInfoVersionPatcherSpec extends Specification {
             product = 'product'
         }
 
-        when:
+
         task.run()
 
-        then:
         assemblyInfo.text.with {
             contains('[assembly: AssemblyTitle("title")]')
             contains('[assembly: AssemblyDescription("description")]')
@@ -59,18 +54,19 @@ class AssemblyInfoVersionPatcherSpec extends Specification {
         }
     }
 
-    def 'core.csproj will be replaced'() {
-        given:
-        def assemblyInfo = temporaryFolder.resolve('core.csproj')
+    @Test
+    void coreCsprojWillBeReplaced() {
+
+        def project = ProjectBuilder.builder().build()
+        def task = project.tasks.register('assemblyPatcher', AssemblyInfoVersionPatcher).get()
+
+        def assemblyInfo = new File(task.temporaryDir, 'core.csproj')
         assemblyInfo.newWriter().withWriter {
             it << this.getClass().getResource('core.csproj').text
         }
 
-        and:
-        def project = ProjectBuilder.builder().build()
-        def task = project.tasks.register('assemblyPatcher', AssemblyInfoVersionPatcher).get()
         task.with {
-            files.set([ project.file(assemblyInfo) ])
+            files.set([project.file(assemblyInfo)])
             fileVersion.set 'file version'
             version = 'version'
             assemblyDescription = 'description'
@@ -80,10 +76,8 @@ class AssemblyInfoVersionPatcherSpec extends Specification {
             product = 'product'
         }
 
-        when:
         task.run()
 
-        then:
         // trademark is not yet supported in new format
         assemblyInfo.text.with {
             contains('    <AssemblyVersion>version</AssemblyVersion>')

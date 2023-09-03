@@ -4,8 +4,7 @@ class PosixMsbuildResolver implements IExecutableResolver {
 
     String[] msbuild
 
-    PosixMsbuildResolver(String version)
-    {
+    PosixMsbuildResolver(String version) {
         msbuild = locateMsBuild(version)
     }
 
@@ -19,9 +18,9 @@ class PosixMsbuildResolver implements IExecutableResolver {
     }
 
     void setupExecutable(Msbuild msbuild) {
-        msbuild.executable = 'MSBuild.dll'
-        if (msbuild.msbuildDir == null) {
-            msbuild.msbuildDir = getMsBuildDir(locateMsBuild(msbuild.version))
+        msbuild.executable.set('MSBuild.dll')
+        if (!msbuild.msbuildDir.isPresent()) {
+            msbuild.msbuildDir.set(getMsBuildDir(locateMsBuild(msbuild.version.get())))
         }
     }
 
@@ -32,11 +31,13 @@ class PosixMsbuildResolver implements IExecutableResolver {
         def existingMsBuilds = msbuildRoots
                 .collectMany { ["$it/lib/mono", "$it/lib/mono/msbuild"] }
                 .collectMany { XbuildResolver.getVersionDirectories(it) }
-                .collectMany { [
-                [new File(it[0], "MSBuild.dll"), it[1]],
-                [new File(it[0], "bin/MSBuild.dll"), it[1]]
-        ]}
-        .findAll { it[0].exists() }
+                .collectMany {
+                    [
+                            [new File(it[0], "MSBuild.dll"), it[1]],
+                            [new File(it[0], "bin/MSBuild.dll"), it[1]]
+                    ]
+                }
+                .findAll { it[0].exists() }
 
         return existingMsBuilds
     }
@@ -44,10 +45,9 @@ class PosixMsbuildResolver implements IExecutableResolver {
     public static String[] locateMsBuild(String version = null) {
         def msbuilds = locateMsBuilds()
         String[] msbuild = null
-        if(version == null) {
+        if (version == null) {
             msbuild = msbuilds.first()
-        }
-        else {
+        } else {
             msbuild = msbuilds.find { (version == it[1]?.toString()) }
         }
 

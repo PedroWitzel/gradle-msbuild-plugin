@@ -15,12 +15,12 @@ class MsbuildResolver implements IExecutableResolver {
     static def findMsbuildByVsWhere(Msbuild msbuild) {
         File tempDir = Files.createTempDirectory(msbuild.temporaryDir.toPath(), 'vswhere').toFile()
 
-        def vswhereFile = new File(tempDir, 'vwshere.exe')
+        def vswhereFile = new File(tempDir, 'vswhere.exe')
         Resources.asByteSource(MsbuildResolver.getResource("/vswhere.exe")).copyTo(com.google.common.io.Files.asByteSink(vswhereFile))
 
         def vswhere = new ProcessBuilder(vswhereFile.toString())
-        if (msbuild.version) {
-            vswhere.command() << '-version' << msbuild.version << '-latest'
+        if (msbuild.version.isPresent()) {
+            vswhere.command() << '-version' << msbuild.version.get() << '-latest'
         } else {
             vswhere.command() << '-latest'
         }
@@ -28,7 +28,7 @@ class MsbuildResolver implements IExecutableResolver {
 
         def proc = vswhere.start()
         proc.waitFor()
-        def location = proc.in.text?.trim();
+        def location = proc.in.text?.trim()
         if (!location) {
             return
         }
@@ -41,42 +41,42 @@ class MsbuildResolver implements IExecutableResolver {
             def hasMsbuildExe = new File(dir, 'Bin\\msbuild.exe').exists()
             msbuild.logger.debug("Found MSBuild directory: $dir; ${hasMsbuildExe ? 'OK' : 'Does not have msbuild.exe'}")
             if (hasMsbuildExe) {
-                msbuild.msbuildDir = new File(dir, 'Bin')
+                msbuild.msbuildDir.set(new File(dir, 'Bin').getCanonicalPath())
             }
         }
     }
 
     static def findMsbuildFromRegistry(Msbuild msbuild) {
         List<String> availableVersions =
-            getMsBuildVersionsFromRegistry(MSBUILD_WOW6432_PREFIX) +
-            getMsBuildVersionsFromRegistry(MSBUILD_PREFIX)
+                getMsBuildVersionsFromRegistry(MSBUILD_WOW6432_PREFIX) +
+                        getMsBuildVersionsFromRegistry(MSBUILD_PREFIX)
         msbuild.logger.info("Found the following MSBuild (in the registry) versions: ${availableVersions}")
 
         List<String> versionsToCheck
-        if (msbuild.version != null) {
-            versionsToCheck = [ MSBUILD_WOW6432_PREFIX + msbuild.version, MSBUILD_PREFIX + msbuild.version ]
-            msbuild.logger.info("MSBuild version explicitly set to: '${msbuild.version}'")
+        if (msbuild.version.isPresent()) {
+            versionsToCheck = [MSBUILD_WOW6432_PREFIX + msbuild.version.get(), MSBUILD_PREFIX + msbuild.version]
+            msbuild.logger.info("MSBuild version explicitly set to: '${msbuild.version.get()}'")
         } else {
             versionsToCheck = availableVersions
         }
 
-        versionsToCheck.find( { trySetMsbuild(msbuild, it) } )
+        versionsToCheck.find { trySetMsbuild(msbuild, it) }
     }
 
     void setupExecutable(Msbuild msbuild) {
-        if (msbuild.msbuildDir == null) {
+        if (!msbuild.msbuildDir.isPresent()) {
             findMsbuildByVsWhere(msbuild)
         }
-        if (msbuild.msbuildDir == null) {
+        if (!msbuild.msbuildDir.isPresent()) {
             findMsbuildFromRegistry(msbuild)
         }
 
-        if (msbuild.msbuildDir)
-            msbuild.logger.info("Resolved MSBuild to ${msbuild.msbuildDir}")
+        if (msbuild.msbuildDir.isPresent())
+            msbuild.logger.info("Resolved MSBuild to ${msbuild.msbuildDir.get()}")
         else
             msbuild.logger.warn("Couldn't resolve MSBuild in the system")
 
-        msbuild.executable = 'msbuild.exe'
+        msbuild.executable.set('msbuild.exe')
     }
 
     @Override
@@ -85,13 +85,15 @@ class MsbuildResolver implements IExecutableResolver {
     }
 
     static List<String> getMsBuildVersionsFromRegistry(String key) {
-        (Registry.getKeys(Registry.HKEY_LOCAL_MACHINE, key) ?: []).sort({ -parseFloat(it) }).collect({ key + it })
+        Registry.getKeys(Registry.HKEY_LOCAL_MACHINE, key)
+                ?.sort { -parseFloat(it) }
+                ?.collect { key + it }
     }
 
     static boolean trySetMsbuild(Msbuild msbuild, String key) {
         def v = Registry.getValue(Registry.HKEY_LOCAL_MACHINE, key, MSBUILD_TOOLS_PATH)
         if (v != null && new File(v).isDirectory()) {
-            msbuild.msbuildDir = v
+            msbuild.msbuildDir.set(v)
         }
     }
 }

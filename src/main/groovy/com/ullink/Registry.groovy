@@ -14,7 +14,7 @@ class Registry {
         try {
             HKEY_LOCAL_MACHINE = WinReg.HKEY_LOCAL_MACHINE
             supported = true
-        } catch (Error e) {
+        } catch (Error ignored) {
             supported = false
         }
         if (prev) {
@@ -29,8 +29,8 @@ class Registry {
             return null
         }
         try {
-            return WinReg[name]
-        } catch (Exception e) {
+            return WinReg[name] as HKEY
+        } catch (Exception ignored) {
             return null
         }
     }
@@ -53,7 +53,7 @@ class Registry {
         }
         try {
             return Advapi32Util.registryGetStringValue(hkey, node, name)
-        } catch (Exception e) {
+        } catch (Exception ignored) {
             return null
         }
     }

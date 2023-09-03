@@ -1,11 +1,18 @@
 package com.ullink
-import java.util.zip.ZipEntry;
-import java.util.zip.ZipInputStream;
+
+import org.gradle.api.file.DirectoryProperty
+import org.gradle.api.provider.ListProperty
+import org.gradle.api.provider.MapProperty
+import org.gradle.api.provider.Property
+import org.gradle.api.tasks.InputDirectory
+
+import java.util.zip.ZipEntry
+import java.util.zip.ZipInputStream
 import java.nio.file.Files
 import groovy.json.JsonOutput
 import groovy.json.JsonSlurper
+import org.gradle.api.DefaultTask
 import org.gradle.api.GradleException
-import org.gradle.api.internal.ConventionTask
 import org.gradle.api.tasks.Input
 import org.gradle.api.tasks.Internal
 import org.gradle.api.tasks.Optional
@@ -13,93 +20,137 @@ import org.gradle.api.tasks.TaskAction
 import org.gradle.internal.os.OperatingSystem
 
 
-class Msbuild extends ConventionTask {
+abstract class Msbuild extends DefaultTask {
 
-    @Input @Optional
-    String version
-    @Input @Optional
-    String msbuildDir
-    @Input @Optional
-    def solutionFile
-    @Input @Optional
-    def projectFile
-    @Input @Optional
-    String loggerAssembly
-    @Input @Optional
-    Boolean optimize
-    @Input @Optional
-    Boolean debugSymbols
-    @Input @Optional
-    String debugType
-    @Input @Optional
-    String platform
-    @Input @Optional
-    def destinationDir
-    @Input @Optional
-    def intermediateDir
-    @Input @Optional
-    Boolean generateDoc
-    @Input @Optional
-    String projectName
-    @Input @Optional
-    String configuration
-    @Input @Optional
-    List<String> defineConstants
-    @Input @Optional
-    List<String> targets
-    @Input @Optional
-    String verbosity
-    @Input @Optional
-    Map<String, Object> parameters = [:]
-    @Input @Optional
-    Map<String, ProjectFileParser> allProjects = [:]
-    @Input @Optional
-    String executable
+    @Input
+    @Optional
+    abstract Property<String> getVersion()
+
+    @Input
+    @Optional
+    abstract Property<String> getMsbuildDir()
+
+    @Input
+    @Optional
+    abstract Property<Object> getSolutionFile()
+
+    @Input
+    @Optional
+    abstract Property<Object> getProjectFile()
+
+    @Input
+    @Optional
+    abstract Property<String> getLoggerAssembly()
+
+    @Input
+    @Optional
+    abstract Property<Boolean> getOptimize()
+
+    @Input
+    @Optional
+    abstract Property<Boolean> getDebugSymbols()
+
+    @Input
+    @Optional
+    abstract Property<String> getDebugType()
+
+    @Input
+    @Optional
+    abstract Property<String> getPlatform()
+
+    @InputDirectory
+    @Optional
+    abstract DirectoryProperty getDestinationDir()
+
+    @InputDirectory
+    @Optional
+    abstract DirectoryProperty getIntermediateDir()
+
+    @Input
+    @Optional
+    abstract Property<Boolean> getGenerateDoc()
+
+    @Input
+    @Optional
+    abstract Property<String> getProjectName()
+
+    @Input
+    @Optional
+    abstract Property<String> getConfiguration()
+
+    @Input
+    @Optional
+    abstract ListProperty<String> getDefineConstants()
+
+    @Input
+    @Optional
+    abstract ListProperty<String> getTargets()
+
+    @Input
+    @Optional
+    abstract Property<String> getVerbosity()
+
+    @Input
+    @Optional
+    abstract MapProperty<String, Object> parameters
+
+    @Input
+    @Optional
+    abstract MapProperty<String, ProjectFileParser> allProjects
+
+    @Input
+    @Optional
+    abstract Property<String> getExecutable()
+
     @Internal
     ProjectFileParser projectParsed
+
     @Internal
     IExecutableResolver resolver
+
     @Internal
     Boolean parseProject = true
 
     Msbuild() {
         description = 'Executes MSBuild on the specified project/solution'
-        resolver =
-                OperatingSystem.current().windows ? new MsbuildResolver() : new XbuildResolver()
+        resolver = OperatingSystem.current().windows ? new MsbuildResolver() : new XbuildResolver()
+        projectName.convention(project.name)
 
-        conventionMapping.map "solutionFile", {
-            project.file(project.name + ".sln").exists() ? project.name + ".sln" : null
-        }
-        conventionMapping.map "projectFile", {
-            project.file(project.name + ".csproj").exists() ? project.name + ".csproj" : null
-        }
-        conventionMapping.map "projectName", { project.name }
+        File solution = project.file(project.name + '.sln')
+        solutionFile.convention(
+                solution.exists() ? solution : null
+        )
+
+        File csproj = project.file(project.name + '.csproj')
+        projectFile.convention(
+                csproj.exists() ? csproj : null
+        )
     }
 
     @Internal
     boolean isSolutionBuild() {
-        projectFile == null && getSolutionFile() != null
+        !projectFile.isPresent() && getSolutionFile().isPresent()
     }
 
     @Internal
     boolean isProjectBuild() {
-        solutionFile == null && getProjectFile() != null
+        !solutionFile.isPresent() && getProjectFile().isPresent()
     }
 
     @Internal
-    def getRootedProjectFile() {
-        project.file(getProjectFile())
+    File getRootedProjectFile() {
+        project.file(getProjectFile().get())
     }
 
     @Internal
-    def getRootedSolutionFile() {
-        project.file(getSolutionFile())
+    File getRootedSolutionFile() {
+        project.file(getSolutionFile().get())
     }
 
     @Internal
     Map<String, ProjectFileParser> getProjects() {
         resolveProject()
-        allProjects
+        allProjects.get()
     }
 
     @Internal
@@ -119,7 +170,7 @@ class Msbuild extends ConventionTask {
         }
         File tempDir = Files.createTempDirectory(temporaryDir.toPath(), 'ProjectFileParser').toFile()
 
-        this.class.getResourceAsStream('/META-INF/ProjectFileParser.zip').withCloseable  {
+        this.class.getResourceAsStream('/META-INF/ProjectFileParser.zip').withCloseable {
             ZipInputStream zis = new ZipInputStream(it)
             ZipEntry ze = zis.getNextEntry()
             while (ze != null) {
@@ -137,33 +188,40 @@ class Msbuild extends ConventionTask {
         }
 
         def executable = new File(tempDir, 'ProjectFileParser.exe')
-        def builder = resolver.executeDotNet(executable)
-        builder.command().add(file.toString())
-        def proc = builder.start()
+        def stderrBuffer = new ByteArrayOutputStream()
+        def stdoutBuffer = new ByteArrayOutputStream()
+        def stdinBuffer = new ByteArrayInputStream()
 
-        def stderrBuffer = new StringBuffer()
-        proc.consumeProcessErrorStream(stderrBuffer)
-        def stdoutBuffer = new StringBuffer()
-        proc.consumeProcessErrorStream(stdoutBuffer)
+        def result = project.providers.exec {
+            commandLine executable.getCanonicalPath(), file.toString()
+            errorOutput = stderrBuffer
+            standardOutput = stdoutBuffer
+            standardInput = stdinBuffer
+        }.getResult()
 
         try {
             def initPropertiesJson = JsonOutput.toJson(getInitProperties())
             logger.debug "Sending ${initPropertiesJson} to ProjectFileParser"
-            proc.out.leftShift(initPropertiesJson).close()
-            return new JsonSlurper().parseText(new FilterJson(proc.in).toString())
-        }
-        finally {
-            def hasErrors = proc.waitFor() != 0
-            logger.debug "Output from ProjectFileParser: "
-            stdoutBuffer.eachLine { line ->
-                 logger.debug line
+            stdoutBuffer.leftShift(initPropertiesJson).close()
+            return new JsonSlurper().parseText(new FilterJson(stdinBuffer).toString())
+        } finally {
+            def hasErrors = result.get().getExitValue() != 0
+
+            logger.debug 'Output from ProjectFileParser: '
+            stdoutBuffer.toString().eachLine { line ->
+                logger.debug line
             }
-            stderrBuffer.eachLine { line ->
+            stderrBuffer.toString().eachLine { line ->
                 if (hasErrors)
                     logger.error line
                 else
                     logger.debug line
             }
+
+            stdoutBuffer.close()
+            stderrBuffer.close()
+            stdinBuffer.close()
+
             if (hasErrors) {
                 throw new GradleException('Project file parsing failed')
             }
@@ -175,12 +233,15 @@ class Msbuild extends ConventionTask {
             if (isSolutionBuild()) {
                 def rootSolutionFile = getRootedSolutionFile()
                 def result = parseProjectFile(rootSolutionFile)
-                allProjects = result.collectEntries { [it.key, new ProjectFileParser(msbuild: this, eval: it.value)] }
+                allProjects.set(result.collectEntries {
+                    [it.key, new ProjectFileParser(msbuild: this, eval: it.value)]
+                } as Map<String, ProjectFileParser>)
+
                 def projectName = getProjectName()
-                if (projectName == null || projectName.isEmpty()) {
+                if (projectName.isPresent() || projectName.get().isEmpty()) {
                     parseProject = false
                 } else {
-                    projectParsed = allProjects[projectName]
+                    projectParsed = allProjects.get()[projectName.get()] as ProjectFileParser
                     if (projectParsed == null) {
                         parseProject = false
                         logger.warn "Project ${projectName} not found in solution"
@@ -189,9 +250,11 @@ class Msbuild extends ConventionTask {
             } else if (isProjectBuild()) {
                 def rootProjectFile = getRootedProjectFile()
                 def result = parseProjectFile(rootProjectFile)
-                allProjects = result.collectEntries {[it.key, new ProjectFileParser(msbuild: this, eval: it.value)]}
-                projectParsed = allProjects.values().first()
-                 if (!projectParsed) {
+                allProjects.set(result.collectEntries {
+                    [it.key, new ProjectFileParser(msbuild: this, eval: it.value)]
+                } as Map<String, ProjectFileParser>)
+                projectParsed = allProjects.get().values().first()
+                if (!projectParsed) {
                     logger.warn "Parsed project ${rootProjectFile} is null (not a solution / project build)"
                 }
             }
@@ -201,7 +264,7 @@ class Msbuild extends ConventionTask {
     }
 
     void setTarget(String s) {
-        targets = [s]
+        targets.set([s])
     }
 
     @TaskAction
@@ -212,13 +275,15 @@ class Msbuild extends ConventionTask {
     }
 
     @Internal
-    def getCommandLineArgs() {
+    List<String> getCommandLineArgs() {
         resolver.setupExecutable(this)
 
-        if (msbuildDir == null) {
-            throw new GradleException("$executable not found")
+        if (!msbuildDir.isPresent()) {
+            throw new GradleException("${executable.get()} not found")
         }
-        def commandLineArgs = resolver.executeDotNet(new File(msbuildDir, executable)).command()
+        List<String> commandLineArgs = resolver
+                .executeDotNet(new File(msbuildDir.get(), executable.get()))
+                .command()
 
         commandLineArgs += '/nologo'
 
@@ -228,14 +293,14 @@ class Msbuild extends ConventionTask {
             commandLineArgs += getRootedProjectFile()
         }
 
-        if (loggerAssembly) {
-            commandLineArgs += '/l:' + loggerAssembly
+        if (loggerAssembly.isPresent()) {
+            commandLineArgs += '/l:' + loggerAssembly.get()
         }
-        if (targets && !targets.isEmpty()) {
-            commandLineArgs += '/t:' + targets.join(';')
+        if (targets.isPresent() && !targets.get().isEmpty()) {
+            commandLineArgs += '/t:' + targets.get().join(';')
         }
 
-        String verb = getMSVerbosity(verbosity)
+        String verb = getMSVerbosity(verbosity.getOrNull())
         if (verb) {
             commandLineArgs += '/v:' + verb
         }
@@ -268,20 +333,20 @@ class Msbuild extends ConventionTask {
     @Internal
     Map getInitProperties() {
         def cmdParameters = new HashMap<String, Object>()
-        if (parameters != null) {
-            cmdParameters.putAll(parameters)
+        if (parameters?.isPresent()) {
+            cmdParameters.putAll(parameters.get())
         }
-        cmdParameters.Project = getProjectName()
-        cmdParameters.GenerateDocumentation = generateDoc
-        cmdParameters.DebugType = debugType
-        cmdParameters.Optimize = optimize
-        cmdParameters.DebugSymbols = debugSymbols
-        cmdParameters.OutputPath = destinationDir == null ? null : project.file(destinationDir)
-        cmdParameters.IntermediateOutputPath = intermediateDir == null ? null : project.file(intermediateDir)
-        cmdParameters.Configuration = configuration
-        cmdParameters.Platform = platform
-        if (defineConstants != null && !defineConstants.isEmpty()) {
-            cmdParameters.DefineConstants = defineConstants.join(';')
+        cmdParameters.Project = getProjectName().get()
+        cmdParameters.GenerateDocumentation = generateDoc.getOrNull()
+        cmdParameters.DebugType = debugType.getOrNull()
+        cmdParameters.Optimize = optimize.getOrNull()
+        cmdParameters.DebugSymbols = debugSymbols.getOrNull()
+        cmdParameters.OutputPath = destinationDir.getOrNull()
+        cmdParameters.IntermediateOutputPath = intermediateDir.getOrNull()
+        cmdParameters.Configuration = configuration.getOrNull()
+        cmdParameters.Platform = platform.getOrNull()
+        if (defineConstants.isPresent() && !defineConstants.get().isEmpty()) {
+            cmdParameters.DefineConstants = defineConstants.get().join(';')
         }
         def iter = cmdParameters.iterator()
         while (iter.hasNext()) {
